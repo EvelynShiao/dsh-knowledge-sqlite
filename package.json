@@ -1,7 +1,7 @@
 {
   "name": "dsh-knowledge-sqlite",
   "description": "DSH 跨会话知识库（中文增强）：短词检索兜底 + 标签目录树 + 写入门控可配",
-  "version": "0.1.9-zh.1",
+  "version": "9999.9.9",
   "keywords": [
     "deepseek-harness",
     "dsh",
