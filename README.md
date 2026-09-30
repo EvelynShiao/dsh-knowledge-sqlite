@@ -96,3 +96,21 @@ knowledge_tags(prefix: "自然科学/物理")     -> 自然科学/物理/光学(
 ## License
 
 MIT（继承上游）。
+## 跨设备（电脑 ↔ 手机）
+
+知识库按 **工作区** 隔离，而电脑与手机的路径前缀必然不同：
+
+```
+电脑  C:\Users\Evelyn\...\.dsh\work\Evelyn
+手机  /data/data/.../.dsh/work/Evelyn
+```
+
+本分叉把工作区键**归一化成路径尾部两段**（`work/Evelyn`），写入与查询两侧都归一：
+
+- 电脑、手机读写同一份库 ✅
+- **其他工作区（`work/1`、`default-workspace`）依旧隔离** —— 不是全局可见，只对同名工作区共享
+- 已入库的历史数据（`workspace_id` 列）已按同一规则迁移
+
+改动：`lib/index.js` 的 `workspaceKey()`、`lib/store.js` 的 `wsKey()` / `normCaller()` / `normStamps()`。
+
+---
