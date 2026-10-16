@@ -37,6 +37,15 @@ export interface KnowledgeSqliteConfig {
     authorization?: {
         allowedGlobalWriters?: string[];
     };
+    /** 可选提示词注入：把知识库使用说明挂进系统提示词（ctx.systemPrompt.section） */
+    systemPrompt?: {
+        /** 是否注入；默认 false（不注入，保持原行为） */
+        enabled?: boolean;
+        /** 注入文案；缺省用 DEFAULT_SYSTEM_PROMPT_TEXT */
+        text?: string;
+        /** 章节排序值；默认 950（FILE_REFERENCE=900 之后、TOOL_BASH=1000 之前） */
+        order?: number;
+    };
 }
 export interface ResolvedConfig {
     gating: 'ask' | 'none';
@@ -58,8 +67,14 @@ export interface ResolvedConfig {
     authorization: {
         allowedGlobalWriters: string[];
     };
+    systemPrompt: {
+        enabled: boolean;
+        text: string;
+        order: number;
+    };
 }
 export declare function defaultDbPath(): string;
+export declare const DEFAULT_SYSTEM_PROMPT_TEXT: string;
 export type WriteResult = {
     id: string;
     wasUpdate: boolean;
