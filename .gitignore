@@ -1,0 +1,16 @@
+# 依赖与临时产物 —— 绝不应该进仓库
+node_modules/
+.pnpm-store/
+
+# 构建/测试产物
+dist/
+coverage/
+*.log
+*.tmp
+audit-report/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
