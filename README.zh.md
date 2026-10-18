@@ -34,8 +34,24 @@ DSH 现有的全文检索使用 `unicode61`，无法匹配中文子串。在项�
 - **`knowledge_update`** — 修正路径；保留 id/溯源/打标；`scope`/`dedupeKey` 写后不可变。
 - **`knowledge_list`** — 可审计性，游标分页（新条目在前），`expired`/`deleted` 标记。
 - **`knowledge_delete`** — tombstone；过期条目返回 `false`。
+- **`knowledge_vec`** — 向量层自检与回填（`mode: check|backfill`）：列出/修复「有词法、无向量」的条目。向量层不可用时返回 `available: false`（正常降级，非错误）。
+- **`archives_search`** — **第二层检索**：同库 `arch_*` 表的原始对话档案（数千段），要原话/上下文/出处时用它；`knowledge_search` 返回的是蒸馏卡片（"大概"）。换种说法也能命中（向量语义）。
 - **事件** — `knowledge/written` / `knowledge/updated` / `knowledge/deleted`，带 `{ id, scope, importance }`。
 - **`knowledge_probe`** — 评测套件工具（阶段 3 门禁）：装载实验语料，报告各臂 recall + 契约检查。
+
+## 两层语料（同一个 SQLite 文件，两套表／两套工具）
+
+| | 第一层 · 知识条目 | 第二层 · 对话档案 |
+|---|---|---|
+| 表 | `items` + `items_fts_*` + `items_vec` | `arch_chunks` + `arch_fts` + `arch_vec` |
+| 工具 | `knowledge_search` / `_list` / `_tags` / `_write` / `_update` / `_delete` / `_vec` | `archives_search` |
+| 内容 | 结论型卡片（身份、经历、观点、项目结论） | 跨会话原始对话片段 |
+| 适合问 | 「关于 X 我之前的结论是什么」 | 「某轮原话怎么说的」「出处在哪」 |
+| 写入 | 模型经 `knowledge_write` 写入 | 由外部索引脚本灌入（`_vector/build-index.mjs`） |
+
+两层的向量口径同款（`bge-small-zh-v1.5-q8` / 512 维 / mean pooling / normalize），但**分别构建**：`items` 用 `_vector/build-items.mjs`，`arch_*` 用 `_vector/build-index.mjs`。改口径必须重建对应索引。
+
+默认系统提示词会向模型说明这两层的分工；`config.systemPrompt.text` 可覆盖。
 
 ## 授权与信任（V1.11）
 

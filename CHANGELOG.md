@@ -1,5 +1,25 @@
 # CHANGELOG — dsh-knowledge-sqlite
 
+## 9999.9.13 (2026-10-18)
+
+- **feat(prompt)**: 默认系统提示词（`DEFAULT_SYSTEM_PROMPT_TEXT`）改写为「两层语料，各查各的」。
+  原文案只讲 `knowledge_*` 一层，模型不知道本插件同时提供 `archives_search`（同库 `arch_*` 表，
+  数千段原始对话），导致需要原话/上下文时不去查档案层。新增内容：
+  · 明确第一层（items 结论卡片）与第二层（arch_* 原始对话）的分工与各自工具；
+  · 「知识层查不到 ≠ 没有这段历史，去档案层找原文」；
+  · 「两层都查不到就直说记录里没有，不要编」；
+  · **「需要现场执行才能得到的事实（文件数量、目录内容、命令输出）不属于任何一层，必须实际调用工具去取」**——
+  这条来自真实误用：模型用记忆回答本应现场执行的目录/文件清点类问题；
+  · 写入后回查一次确认已入索引。
+- **fix(vec)**: 写入/更新/富化的向量索引由 fire-and-forget 改为 `await`，并把结果透出为回执字段
+  `vectorized: true|false`。原实现失败静默，会留下「有词法、无向量」的条目而无人知晓
+  （实证：`k-ad58d9b9` 即此类漏网条目——它恰好是"记录向量化完成"的那条知识）。
+  行为兼容：向量层不可用（无模型/无表）时仍返回 `vectorized: false` 且不阻断写入，纯词法照旧。
+- **feat(vec)**: 新增 `SqliteKnowledgeStore.missingVecIds()` / `backfillVec()` 与模型工具
+  **`knowledge_vec`**（`mode: check|backfill`）——缺口可被显式发现并修复，不再依赖人工查库。
+  向量层不可用时 `available: false`（正常降级，非错误）。
+- **chore**: 版本 9999.9.12 → 9999.9.13。
+
 ## 0.1.9 (2026-09-10)
 
 - **chore(deps)**: 宿主升级对齐——`peerDependencies` 与 `devDependencies` 中的
