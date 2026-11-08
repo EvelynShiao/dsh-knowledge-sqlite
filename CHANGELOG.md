@@ -1,5 +1,15 @@
 # CHANGELOG — dsh-knowledge-sqlite
 
+## 9999.9.14 (2026-11-08)
+
+- **feat(vec)**: 向量运行时一键安装脚本 `install-vec-runtime.ps1`（Windows）/ `install-vec-runtime.sh`
+  （Linux、Android proot）+ `scripts/vec-selftest.mjs` 自检（512 维、L2≈1.0 判 PASS）。
+  背景：运行时（bge-small-zh-v1.5 q8 模型 + @huggingface/transformers）装在 `$DSH_HOME/work/Evelyn/_vector`，
+  不在 dsh-sync 同步范围——PC 实证该目录丢失后整库静默降级纯词法（库内 `items_vec`/`arch_vec` 数据完好
+  但运行时缺失，`vecAvailable()=false`，且全程无报错）。脚本幂等、装完自检、失败如实报告。
+  已知边界：onnxruntime-node 预编译为 glibc Linux（x64/arm64）——Termux 原生（bionic libc）不可用，
+  需在 proot-distro 内运行；不装运行时则保持纯词法检索，一切照旧。
+
 ## 9999.9.13 (2026-10-18)
 
 - **feat(prompt)**: 默认系统提示词（`DEFAULT_SYSTEM_PROMPT_TEXT`）改写为「两层语料，各查各的」。

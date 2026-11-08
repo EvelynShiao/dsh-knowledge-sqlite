@@ -110,6 +110,17 @@ global allowlist、scope/dedupeKey 不可变、TTL（过滤/list 标记/过期 d
 L1 扩展（mock llm：命中/缓存/超时降级/失败降级）、budget 截断、事件发射、ask 门控监听器、
 probe 实验套件（A/C/D 确定性臂精确复现 + contract 全过）。
 
+## 向量运行时一键安装（PC / 手机）
+
+语义检索（`items_vec`/`arch_vec` 榜）依赖本地嵌入运行时，位于 `$DSH_HOME/work/Evelyn/_vector`（bge-small-zh-v1.5 q8 模型约 24MB + `@huggingface/transformers`）。**该目录不在 dsh-sync 同步范围**——换机、重装、清理 `.dsh` 或手机首次启用语义检索时，跑一次脚本即可重建：
+
+- Windows：`./install-vec-runtime.ps1`
+- Linux / Android：`bash install-vec-runtime.sh`
+
+脚本幂等（已装自动跳过），四步：npm 装运行时（默认 npmmirror 源）→ hf-mirror 下模型 → 摆放 `model/` 与根目录检查位副本 → `scripts/vec-selftest.mjs` 自检（512 维 + L2≈1.0 判 PASS）。装完向量层即刻生效，DSH 无需重启。
+
+已知边界：onnxruntime-node 预编译二进制为 glibc Linux（x64/arm64）——Android 的 Termux 原生环境（bionic libc）加载不了，请在 proot-distro（Ubuntu/Debian）内运行；自检 FAIL 时脚本会如实报告失败原因，词法检索不受影响。
+
 ## 设计与证据
 
 - [DESIGN](docs/DESIGN.md) — V1.11 提案全文（社区设计，非官方）
