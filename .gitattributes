@@ -1,0 +1,5 @@
+# 行尾锁定：安装脚本必须保持跨平台可用
+* text=auto
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ps1 text eol=crlf
