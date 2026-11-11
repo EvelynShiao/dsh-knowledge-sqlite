@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     const fetchJson = async (path, opts = {}) => {
       const res = await fetch(apiBase + path, { headers: { 'content-type': 'application/json' }, ...opts })
       const body = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`)
+      if (!res.ok) { const e = new Error(body?.error ?? `HTTP ${res.status}`); e.status = res.status; throw e }
       return body
     }
 
@@ -45,8 +45,11 @@ window.__ModuleLoader__.load({
       const [selftest, setSelftest] = useState(null)
       const [busy, setBusy] = useState('')
       const [err, setErr] = useState('')
+      const [errStatus, setErrStatus] = useState(0)
+      const [copied, setCopied] = useState(false)
       const load = useCallback(async () => {
-        try { setSt(await fetchJson('/vec/status')) } catch (e) { setErr(String(e?.message ?? e)) }
+        try { setSt(await fetchJson('/vec/status')); setErr(''); setErrStatus(0) }
+        catch (e) { setErr(String(e?.message ?? e)); setErrStatus(e?.status ?? 0) }
       }, [])
       useEffect(() => { void load() }, [load])
       // 安装进行中：2s 轮询；后端 running=false（结束）后再拉一次拿最终日志。
@@ -56,34 +59,74 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [st?.install?.running, load])
       const install = async () => {
-        setBusy('install'); setErr(''); setSelftest(null)
-        try { await fetchJson('/vec/install', { method: 'POST' }); await load() } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy('') }
+        setBusy('install'); setErr(''); setErrStatus(0); setSelftest(null)
+        try { await fetchJson('/vec/install', { method: 'POST' }); await load() } catch (e) { setErr(String(e?.message ?? e)); setErrStatus(e?.status ?? 0) } finally { setBusy('') }
       }
       const runSelftest = async () => {
-        setBusy('selftest'); setErr(''); setSelftest(null)
-        try { setSelftest(await fetchJson('/vec/selftest', { method: 'POST' })) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy('') }
+        setBusy('selftest'); setErr(''); setErrStatus(0); setSelftest(null)
+        try { setSelftest(await fetchJson('/vec/selftest', { method: 'POST' })) } catch (e) { setErr(String(e?.message ?? e)); setErrStatus(e?.status ?? 0) } finally { setBusy('') }
       }
+      const copyDir = async () => {
+        try { await navigator.clipboard.writeText(st?.dir ?? ''); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* 剪贴板不可用时静默 */ }
+      }
+      // 状态拉取失败：401=插件被禁（宿主网关统一拒），给启用指引；其余给原始错误 + 重试。
       if (st === null) {
-        return h('div', null, err !== '' ? h('div', { style: styles.err }, `加载失败：${err}`) : '加载中…')
+        if (errStatus === 401) {
+          return h('div', { style: styles.err },
+            '知识库插件当前处于禁用状态（宿主网关拒绝，HTTP 401）。',
+            h('div', { style: styles.note }, '到 插件管理 → dsh-knowledge-sqlite 启用后刷新本页；若反复出现，检查 profiles/web/cordis.patch.yml 是否残留 disabled: true。'))
+        }
+        return h('div', null,
+          err !== '' ? h('div', { style: styles.err }, `加载失败：${err}`) : '加载中…',
+          err !== '' ? h('button', { onClick: () => void load(), style: { ...styles.btn, marginLeft: 8 } }, '重试') : null)
       }
       const running = st.install?.running === true
+      const needModel = st.available !== true && st.modelPresent !== true
+      const needRuntime = st.available !== true && st.runtimePresent !== true
+      const dirStyle = { ...styles.log, maxHeight: 'none', userSelect: 'all', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }
+      const copyBtn = h('button', { onClick: () => void copyDir(), style: { ...styles.btn, padding: '2px 10px', fontSize: 11 } }, copied ? '已复制' : '复制路径')
       return h('div', { style: { display: 'grid', gap: 8 } },
         h('div', null,
           h('strong', null, st.available === true
             ? '向量语义检索：已就绪'
-            : '向量语义检索：未安装 —— 已自动降级纯词法检索，功能不受影响')),
-        h('div', { style: styles.note }, `模型目录：${st.dir}`),
+            : needModel && needRuntime ? '向量语义检索：运行时与模型均未安装——已自动降级纯词法检索，功能不受影响'
+            : needModel ? '向量语义检索：模型缺失——已自动降级纯词法检索，功能不受影响'
+            : '向量语义检索：推理运行时缺失——已自动降级纯词法检索，功能不受影响')),
+        // 上轮一键安装失败：红字总结 + 指向下方手动路径（对齐 OFM「失败有指示」标准）。
+        st.install?.ok === false
+          ? h('div', { style: styles.err },
+              '上次一键安装未成功（exit 非 0）。可按下方「手动放置」自行补齐，或设好 NPM_REGISTRY / HF_ENDPOINT 后重试；日志见下。')
+          : null,
+        // 快捷路径 + 环境路径来源（对齐 LDW「路径可见可指定」标准）。
+        h('div', null,
+          h('div', { style: styles.note }, '模型目录（实际生效路径）：'),
+          h('div', { style: dirStyle }, h('code', { style: { wordBreak: 'break-all' } }, st.dir), copyBtn),
+          h('div', { style: styles.note }, st.dshHomeSource === 'DSH_HOME'
+            ? '目录来自环境变量 DSH_HOME——改该变量会迁移模型位置。'
+            : '未设 DSH_HOME，按默认 %LOCALAPPDATA%\\DeepSeekHarness\\.dsh 解析；设置 DSH_HOME 可迁移。')),
+        st.available !== true
+          ? h('div', null,
+              h('div', { style: styles.note }, '手动放置清单（二选一：跑一键安装，或按下表自行补齐后即刻生效，无需重启）：'),
+              h('ul', { style: { margin: '4px 0 0 18px', padding: 0, fontSize: 12, display: 'grid', gap: 4 } },
+                h('li', null,
+                  needModel ? '✗' : '✓', ' 模型权重 model_quantized.onnx（≥20MB）→ 放到目录根：',
+                  h('div', null,
+                    h('a', { href: 'https://hf-mirror.com/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx', target: '_blank', rel: 'noreferrer', style: { fontSize: 12 } }, 'hf-mirror 直链下载'),
+                    '（源 Xenova/bge-small-zh-v1.5 q8，与索引嵌入口径一致，不可换模型）')),
+                h('li', null,
+                  needRuntime ? '✗' : '✓', ' 推理运行时 @huggingface/transformers → 目录下 node_modules：',
+                  h('code', { style: { fontSize: 11 } }, `npm install --prefix "${st.dir}" @huggingface/transformers --registry https://registry.npmmirror.com`))))
+          : null,
         st.available !== true && st.scriptPresent !== true
           ? h('div', { style: styles.err },
-              '安装脚本不在插件目录。npm 发布包应附带 install-vec-runtime.*；本机也可从 git 仓库 plugin-src/dsh-knowledge-sqlite 取脚本后重试。')
+              '一键安装脚本不在插件目录。npm 发布包应附带 install-vec-runtime.*；本机也可从 git 仓库取脚本放到插件目录后用「一键安装」。')
           : null,
-        h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
-          st.available !== true && st.scriptPresent === true
-            ? h('button', { onClick: () => void install(), disabled: busy !== '' || running, style: styles.btn },
-                running ? '安装中…（可看下方日志）' : '一键安装向量运行时（下载 ~24MB 模型）')
-            : null,
-          h('button', { onClick: () => void runSelftest(), disabled: busy !== '' },
-            busy === 'selftest' ? '自检中…' : '跑自检（512 维 / L2≈1.0）')),
+        st.available !== true && st.scriptPresent === true
+          ? h('button', { onClick: () => void install(), disabled: busy !== '' || running, style: styles.btn },
+              running ? '安装中…（可看下方日志）' : '一键安装向量运行时（下载 ~24MB 模型）')
+          : null,
+        h('button', { onClick: () => void runSelftest(), disabled: busy !== '' },
+          busy === 'selftest' ? '自检中…' : '跑自检（512 维 / L2≈1.0）'),
         running || (st.install?.log ?? '') !== ''
           ? h('pre', { style: styles.log }, (st.install?.log ?? '').slice(-3000) || '（等待输出…）')
           : null,
