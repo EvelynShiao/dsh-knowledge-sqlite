@@ -42,13 +42,16 @@ fi
 
 echo ""
 echo "② 下载模型（$REPO q8，约 24MB）..."
-# dl <库内相对路径> <最小字节数>——min 防镜像错误页（hf-mirror 对异常路径回 HTTP 200 + 小 JSON）
+# dl <远程路径> <本地相对路径> <最小字节数>——min 防镜像错误页。
+# 注意：远程路径按 HF 仓库真实结构（根下 config.json + onnx/），本地路径按 vec.js 的
+# transformers 加载约定（localModelPath/model/...，模型名 'model'）——两者解耦，别合并。
+# 2026-11-11：HF 迁移 xethub 后镜像不再兼容 model/ 前缀的远程路径（404），据此拆分。
 dl() {
-    local rel="$1" min="$2" f="$V/$1"
+    local remote="$1" rel="$2" min="$3" f="$V/$rel"
     if [ -s "$f" ] && { [ "$min" -le 0 ] || [ "$(wc -c < "$f")" -ge "$min" ]; }; then
         echo "   已存在: $rel"; return 0
     fi
-    curl -fsSL --retry 3 --max-time 600 -o "$f" "$HF/$REPO/resolve/main/$rel"
+    curl -fsSL --retry 3 --max-time 600 -o "$f" "$HF/$REPO/resolve/main/$remote"
     local sz; sz=$(wc -c < "$f")
     if [ "$min" -gt 0 ] && [ "$sz" -lt "$min" ]; then
         rm -f "$f"
@@ -56,10 +59,10 @@ dl() {
     fi
     echo "   完成: $rel (${sz}B)"
 }
-dl model/config.json 500
-dl model/tokenizer.json 100000
-dl model/tokenizer_config.json 100
-dl model/onnx/model_quantized.onnx 20000000
+dl config.json model/config.json 500
+dl tokenizer.json model/tokenizer.json 100000
+dl tokenizer_config.json model/tokenizer_config.json 100
+dl onnx/model_quantized.onnx model/onnx/model_quantized.onnx 20000000
 
 echo ""
 echo "③ 根目录权重副本（vecAvailable 检查位）..."

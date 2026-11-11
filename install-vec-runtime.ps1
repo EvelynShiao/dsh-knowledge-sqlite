@@ -35,20 +35,23 @@ if (Test-Path (Join-Path $V "node_modules\@huggingface\transformers\dist\transfo
 
 Write-Host ""
 Write-Host "② 下载模型（$Repo q8，约 24MB）..."
-# Get-Model <库内相对路径> <最小字节数>——min 防镜像错误页（hf-mirror 对异常路径回 HTTP 200 + 小 JSON）
-function Get-Model([string]$rel, [long]$min) {
+# Get-Model <远程路径> <本地相对路径> <最小字节数>——min 防镜像错误页。
+# 注意：远程路径按 HF 仓库真实结构（根下 config.json + onnx/），本地路径按 vec.js 的
+# transformers 加载约定（localModelPath/model/...，模型名 'model'）——两者解耦，别合并。
+# 2026-11-11：HF 迁移 xethub 后镜像不再兼容 model/ 前缀的远程路径（404），据此拆分。
+function Get-Model([string]$remote, [string]$rel, [long]$min) {
     $f = Join-Path $V ($rel -replace "/", "\")
     if ((Test-Path $f) -and ((Get-Item $f).Length -ge $min)) { Write-Host "   已存在: $rel"; return }
-    curl.exe -fsSL --retry 3 --max-time 600 -o $f "$HF/$Repo/resolve/main/$rel"
+    curl.exe -fsSL --retry 3 --max-time 600 -o $f "$HF/$Repo/resolve/main/$remote"
     if ($LASTEXITCODE -ne 0) { if (Test-Path $f) { Remove-Item $f -Force }; throw "下载失败: $rel" }
     $sz = (Get-Item $f).Length
     if ($sz -lt $min) { Remove-Item $f -Force; throw "大小异常: $rel（$sz B < $min B，疑似镜像错误页），已删除" }
     Write-Host ("   完成: {0} ({1}B)" -f $rel, $sz)
 }
-Get-Model "model/config.json" 500
-Get-Model "model/tokenizer.json" 100000
-Get-Model "model/tokenizer_config.json" 100
-Get-Model "model/onnx/model_quantized.onnx" 20000000
+Get-Model "config.json" "model/config.json" 500
+Get-Model "tokenizer.json" "model/tokenizer.json" 100000
+Get-Model "tokenizer_config.json" "model/tokenizer_config.json" 100
+Get-Model "onnx/model_quantized.onnx" "model/onnx/model_quantized.onnx" 20000000
 
 Write-Host ""
 Write-Host "③ 根目录权重副本（vecAvailable 检查位）..."
