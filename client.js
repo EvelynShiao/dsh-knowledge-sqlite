@@ -94,6 +94,11 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      if (!ctx.slots) {
+        // 防御：inject 声明链断裂时绝不炸 shell——丢一张卡片远好于崩整页。
+        console.warn('[dsh-knowledge-sqlite] ctx.slots unavailable; settings card skipped')
+        return
+      }
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'knowledge-sqlite',
@@ -102,6 +107,9 @@ window.__ModuleLoader__.load({
       }, () => h(VecCard)))
     }
     exports.apply = apply
+    // shell 的 ModuleLoader 按本 bundle 导出的 inject 给 apply 的 ctx 挂服务（OFM/webin 同款）；
+    // 缺了它 ctx.slots 是 undefined，配合 immediately:true 会在 shell 初始化期炸整页。
+    exports.inject = inject
     return module.exports
   }
 })
