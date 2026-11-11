@@ -38,6 +38,8 @@ window.__ModuleLoader__.load({
       log: { maxHeight: 220, overflow: 'auto', fontSize: 11, lineHeight: 1.5, background: 'color-mix(in srgb, currentColor 6%, transparent)', borderRadius: 8, padding: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 },
       note: { opacity: 0.72, fontSize: 12 },
       err: { color: 'var(--dsw-alias-state-error-primary, #d33)', fontSize: 12 },
+      alert: { border: '1.5px solid var(--dsw-alias-state-error-primary, #d33)', background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d33) 10%, transparent)', borderRadius: 8, padding: 10, display: 'grid', gap: 6 },
+      alertTitle: { color: 'var(--dsw-alias-state-error-primary, #d33)', fontWeight: 700, fontSize: 13 },
     }
 
     function VecCard() {
@@ -58,9 +60,12 @@ window.__ModuleLoader__.load({
         const timer = setInterval(() => { void load() }, 2000)
         return () => clearInterval(timer)
       }, [st?.install?.running, load])
-      const install = async () => {
+      const install = async (force = false) => {
         setBusy('install'); setErr(''); setErrStatus(0); setSelftest(null)
-        try { await fetchJson('/vec/install', { method: 'POST' }); await load() } catch (e) { setErr(String(e?.message ?? e)); setErrStatus(e?.status ?? 0) } finally { setBusy('') }
+        try {
+          await fetchJson('/vec/install', { method: 'POST', body: JSON.stringify({ force }) })
+          await load()
+        } catch (e) { setErr(String(e?.message ?? e)); setErrStatus(e?.status ?? 0) } finally { setBusy('') }
       }
       const runSelftest = async () => {
         setBusy('selftest'); setErr(''); setErrStatus(0); setSelftest(null)
@@ -85,9 +90,30 @@ window.__ModuleLoader__.load({
       const needRuntime = st.available !== true && st.runtimePresent !== true
       const dirStyle = { ...styles.log, maxHeight: 'none', userSelect: 'all', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }
       const copyBtn = h('button', { onClick: () => void copyDir(), style: { ...styles.btn, padding: '2px 10px', fontSize: 11 } }, copied ? '已复制' : '复制路径')
+      // 醒目警示框：文件在但调用失败（最隐蔽的坏法）优先于一切状态显示——降级不许静默。
+      const vecErr = st.lastError
+      const alertBox = vecErr
+        ? h('div', { style: styles.alert },
+            h('div', { style: styles.alertTitle }, '⚠ 向量语义检索调用失败'),
+            h('div', { style: { fontSize: 12 } },
+              '已自动降级纯词法检索——检索结果仍可用，但缺语义排序。失败原因：',
+              h('code', { style: { fontSize: 11, wordBreak: 'break-all' } }, vecErr.message)),
+            h('div', { style: styles.note },
+              `最近失败：${new Date(vecErr.at).toLocaleString()}（本次运行第 ${vecErr.count} 次）`),
+            h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+              h('button', { onClick: () => void install(true), disabled: busy !== '' || running, style: styles.btn },
+                running ? '修复中…（看下方日志）' : '一键修复（清模型强制重装）'),
+              h('button', { onClick: () => void runSelftest(), disabled: busy !== '' }, busy === 'selftest' ? '自检中…' : '重跑自检'),
+              h('button', { onClick: () => void load(), disabled: busy !== '', style: styles.btn }, '刷新状态')),
+            h('div', { style: styles.note },
+              '修复会重新下载 ~24MB 模型（hf-mirror），网络不畅可设 HF_ENDPOINT；重装完成即刻生效，无需重启。'))
+        : null
       return h('div', { style: { display: 'grid', gap: 8 } },
+        alertBox,
         h('div', null,
-          h('strong', null, st.available === true
+          h('strong', null, vecErr
+            ? '向量语义检索：调用异常（见上方警示框）'
+            : st.available === true
             ? '向量语义检索：已就绪'
             : needModel && needRuntime ? '向量语义检索：运行时与模型均未安装——已自动降级纯词法检索，功能不受影响'
             : needModel ? '向量语义检索：模型缺失——已自动降级纯词法检索，功能不受影响'
