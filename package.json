@@ -28,6 +28,7 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
