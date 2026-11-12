@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Knowledge SQLite",
+    "description": "DSH cross-session knowledge base (CJK-enhanced): short-token lexical fallback + tag directory tree + configurable write gating."
+  }
+}
