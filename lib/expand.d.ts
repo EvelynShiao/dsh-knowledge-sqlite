@@ -10,6 +10,10 @@
  *
  * 消息构造遵循 harness 约定（content blocks + source + id）——原型曾因字符串 content
  * 与 finish reason 字符串比较导致全部降级（见 research/memory-knowledge-seam/experiments/prototype/RESULTS-PROTOTYPE.md §4.4）。
+ *
+ * 诊断（0.1.10）：降级不再是静默空手而归——`callModel` 返回结构化 reason（路由缺失 /
+ * selection 抛错 / 无 llm 服务 / 超时 / 流错误），`expand()` 记录到 `stats.lastDegradeReason`
+ * 与 `stats.degradeReasons` 计数、经 `ctx.logger` 告警，并把 reason 透出到 `ExpansionOutcome`。
  */
 import type { Context } from '@deepseek-ai/cordis';
 export interface ExpansionOutcome {
@@ -17,11 +21,13 @@ export interface ExpansionOutcome {
     source: 'live' | 'cache' | null;
     degraded: boolean;
     latencyMs: number;
+    /** 降级原因（诊断用；仅 degraded:true 时存在）。 */
+    reason?: string;
 }
 export interface QueryExpansionConfig {
     enabled: boolean;
     /** 专用扩展 provider（0.1.6：显式指定，优先级高于会话默认 provider——扩展是低延迟任务，
-     *  不应跟随主模型路由（中转/推理模型 TTFT 可达 3s+，见 EXPERIMENTS §9）） */
+     *  不应跟随主模型路由（中转/推理模型 TTFT 可达 3s+，见 EXPERIMENTS §9）；0.1.10 起 callModel 实际读取） */
     provider?: string;
     /** 专用扩展模型（V1.11：unset = 会话默认模型） */
     model?: string;
@@ -47,6 +53,10 @@ export declare class QueryExpander {
         persistHits: number;
         degraded: number;
         totalLatencyMs: number;
+        /** 降级原因首段 → 次数（诊断；probe 的 expansion-stats 会展开）。 */
+        degradeReasons: Record<string, number>;
+        /** 最近一次降级原因（含细节）。 */
+        lastDegradeReason: string | null;
     };
     constructor(ctx: Context, config: QueryExpansionConfig, persist?: ExpansionCacheStore | null);
     clear(): void;
@@ -57,6 +67,8 @@ export declare class QueryExpander {
      * @param wsId 调用方 workspace id（持久化缓存隔离键）
      */
     expand(query: string, signal?: AbortSignal, wsId?: string): Promise<ExpansionOutcome>;
+    /** 记录一次降级：计数 + 日志 + 结构化 reason（诊断；不改变降级语义）。 */
+    private degrade;
     private callModel;
     /** 与超时竞速（timer 服务：宿主 fiber 计时器，插件停止时自动清理）。collect 先完成 → false；超时 → true。 */
     private raceWithTimeout;

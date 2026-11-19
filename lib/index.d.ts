@@ -18,12 +18,15 @@ export interface KnowledgeSqliteConfig {
     gating?: 'ask' | 'none';
     /** SQLite 数据库路径；默认 $DSH_HOME/knowledge.sqlite */
     databasePath?: string;
-    /** probe 语料目录；默认 '<workspace>/research/memory-knowledge-seam/experiments/memory-experiment'（实验套件） */
+    /** probe 语料目录；默认包内 fixture `tests/fixtures/corpus/`（随包发布，import.meta.url 解析为绝对路径）；
+     *  显式相对路径按 workspace 解析，绝对路径原样使用（0.1.10） */
     corpusPath?: string;
     /** seam 级写上限（V1.11 enrichment.maxContentTokens，默认 2048） */
     maxContentTokens?: number;
     queryExpansion?: {
         enabled?: boolean;
+        /** 专用扩展 provider（默认跟随会话默认；扩展低延迟任务不应跟随主模型路由，见 EXPERIMENTS §9）（0.1.10） */
+        provider?: string;
         model?: string;
         maxOutputTokens?: number;
         timeoutMs?: number;
@@ -54,6 +57,7 @@ export interface ResolvedConfig {
     maxContentTokens: number;
     queryExpansion: {
         enabled: boolean;
+        provider?: string;
         model?: string;
         maxOutputTokens: number;
         timeoutMs: number;
@@ -74,6 +78,8 @@ export interface ResolvedConfig {
     };
 }
 export declare function defaultDbPath(): string;
+/** probe 语料默认目录：包内 fixture（lib/index.js → ../tests/fixtures/corpus），随包发布。（0.1.10） */
+export declare function defaultCorpusPath(): string;
 export declare const DEFAULT_SYSTEM_PROMPT_TEXT: string;
 export type WriteResult = {
     id: string;
