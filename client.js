@@ -62,6 +62,31 @@ window.__ModuleLoader__.load({
       installBtn: '一键安装向量运行时（下载 ~24MB 模型）',
       selftestBtn: '跑自检（512 维 / L2≈1.0）',
       waitingLog: '（等待输出…）',
+      healthTitle: '记忆与知识库体检',
+      healthDesc: '一次体检三处：session-kit 记忆库（memory.sqlite：表行数/FTS 一致性/孤儿引用）、知识库条目层（items+向量缺口）、对话档案层（arch_*，同库不同表）。全程只读，不修任何数据。',
+      healthRun: '开始体检',
+      healthRunning: '体检中…',
+      healthFailed: '体检请求失败',
+      healthMemSection: 'A · 记忆库（session-kit / memory.sqlite）',
+      healthKbSection: 'B · 知识库条目层（items）',
+      healthArchSection: 'C · 对话档案层（arch_*）',
+      healthTable: '表',
+      healthFts: 'FTS 索引',
+      healthFtsSynced: '一致',
+      healthFtsOutOfSync: '与主表行数不一致——重启 DSH 会触发自动重建',
+      healthFtsDisabled: '未启用',
+      healthOrphans: '孤儿引用',
+      healthDir: '项目',
+      healthEphemeral: '临时记忆（内存池）',
+      healthSettings: '生效设置',
+      healthItems: '条目',
+      healthKbFts: 'FTS 行数',
+      healthVec: '向量语义层',
+      healthVecMissing: '条目缺向量索引（纯词法仍可用）——向量运行时就绪后可用 knowledge_vec 回填',
+      healthVecUnavailable: '向量层不可用（缺模型/运行时），已降级纯词法检索',
+      healthExpansionCache: '查询扩展缓存',
+      healthArchEmpty: '档案层为空或未建（archives_search 首次使用后才有数据）',
+      healthUnavailable: '服务未加载（插件改动需重启 DSH 生效）',
     }
     const en = {
       label: 'Knowledge base',
@@ -100,6 +125,31 @@ window.__ModuleLoader__.load({
       installBtn: 'One-click install vector runtime (~24MB model download)',
       selftestBtn: 'Run self-test (512 dims / L2≈1.0)',
       waitingLog: '(waiting for output…)',
+      healthTitle: 'Memory & knowledge checkup',
+      healthDesc: 'One checkup, three stores: session-kit memory database (memory.sqlite: table rows / FTS consistency / orphan refs), knowledge entry layer (items + vector gaps), and the conversation archive layer (arch_*, same database, separate tables). Read-only — never modifies data.',
+      healthRun: 'Run checkup',
+      healthRunning: 'Checking…',
+      healthFailed: 'Checkup request failed',
+      healthMemSection: 'A · Memory database (session-kit / memory.sqlite)',
+      healthKbSection: 'B · Knowledge entry layer (items)',
+      healthArchSection: 'C · Conversation archive layer (arch_*)',
+      healthTable: 'Table',
+      healthFts: 'FTS index',
+      healthFtsSynced: 'in sync',
+      healthFtsOutOfSync: 'row count differs from the main table — restarting DSH triggers an automatic rebuild',
+      healthFtsDisabled: 'disabled',
+      healthOrphans: 'Orphan references',
+      healthDir: 'Project',
+      healthEphemeral: 'Ephemeral memories (in-memory pool)',
+      healthSettings: 'Active settings',
+      healthItems: 'Entries',
+      healthKbFts: 'FTS rows',
+      healthVec: 'Vector semantic layer',
+      healthVecMissing: 'entries lack vector index (lexical still works) — once the vector runtime is ready, backfill with knowledge_vec',
+      healthVecUnavailable: 'vector layer unavailable (model/runtime missing), fell back to lexical-only search',
+      healthExpansionCache: 'Query expansion cache',
+      healthArchEmpty: 'Archive layer is empty or not created (data appears after first archives_search use)',
+      healthUnavailable: 'Service not loaded (plugin changes need a DSH restart)',
     }
     let t = (key, vars) => {
       let out = zh[key] ?? key
@@ -110,6 +160,10 @@ window.__ModuleLoader__.load({
     const apiBase = (() => {
       // 用页面 base 解析而不是 origin-absolute：DSH 可能挂在反向代理子路径下（OFM 同款）。
       try { return new URL('api/knowledge-sqlite', document.baseURI).pathname } catch { return '/api/knowledge-sqlite' }
+    })()
+    // session-kit 记忆库健康路由（统一体检 A 段，跨插件同源调用；子路径部署同款兼容）。
+    const memoryHealthPath = (() => {
+      try { return new URL('dsh-session-kit/memory/health', document.baseURI).pathname } catch { return '/dsh-session-kit/memory/health' }
     })()
     const fetchJson = async (path, opts = {}) => {
       const res = await fetch(apiBase + path, { headers: { 'content-type': 'application/json' }, ...opts })
@@ -247,6 +301,94 @@ window.__ModuleLoader__.load({
         err !== '' ? h('div', { style: styles.err }, err) : null)
     }
 
+    function HealthCard() {
+      const [report, setReport] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [err, setErr] = useState('')
+      const run = async () => {
+        setBusy(true); setErr(''); setReport(null)
+        try {
+          const [memRes, kbRes] = await Promise.all([
+            fetch(memoryHealthPath).then((r) => r.json()),
+            fetchJson('/health')
+          ])
+          setReport({
+            mem: memRes?.ok === true ? memRes.value : null,
+            memErr: memRes?.ok === true ? null : String(memRes?.error ?? `HTTP ${memRes?.status ?? '?'}`),
+            kb: kbRes?.ok === true ? kbRes.value : null,
+            kbErr: kbRes?.ok === true ? null : String(kbRes?.error ?? `HTTP ${kbRes?.status ?? '?'}`)
+          })
+        } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+      }
+      const fmtBytes = (n) => (typeof n === 'number' && n >= 0 ? `${(n / 1048576).toFixed(1)} MB` : '—')
+      const num = (v) => (v === null || v === undefined ? '缺失/损坏' : String(v))
+      const toneStyle = (tone) => tone === 'bad' ? styles.err : tone === 'good'
+        ? { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 }
+        : tone === 'warn' ? { color: 'var(--dsw-alias-state-warning-primary, #d89614)', fontSize: 12 } : { fontSize: 12 }
+      const row = (label, value, tone) => h('div', { key: label + String(value), style: { display: 'flex', gap: 10, fontSize: 12, lineHeight: 1.6 } },
+        h('span', { style: { minWidth: 200, opacity: 0.72 } }, label),
+        h('span', { style: toneStyle(tone) }, String(value)))
+      const section = (key, title, rows) => h('div', { key, style: { display: 'grid', gap: 2 } },
+        h('strong', { style: { fontSize: 13 } }, title), ...rows)
+      let sections = null
+      if (report) {
+        /* A 段：记忆库（session-kit） */
+        const mem = report.mem
+        const memRows = []
+        if (mem?.error) memRows.push(row('error', mem.error, 'bad'))
+        else if (mem) {
+          memRows.push(row('db', `${mem.dbPath ?? '—'} · ${fmtBytes(mem.dbSizeBytes)}`))
+          for (const [table, n] of Object.entries(mem.tables ?? {})) memRows.push(row(`${t('healthTable')} ${table}`, num(n), n === null ? 'bad' : undefined))
+          memRows.push(mem.fts?.available === true
+            ? row(t('healthFts'), mem.fts.inSync === true ? `${t('healthFtsSynced')}（${mem.fts.ftsRows}/${mem.fts.memoryRows}）` : t('healthFtsOutOfSync'), mem.fts.inSync === true ? 'good' : 'bad')
+            : row(t('healthFts'), t('healthFtsDisabled')))
+          const orphanTotal = (mem.orphans?.tagLinks ?? 0) + (mem.orphans?.sessionDirectories ?? 0)
+          memRows.push(row(t('healthOrphans'), `tag_links=${num(mem.orphans?.tagLinks)} · session_directories=${num(mem.orphans?.sessionDirectories)}`, orphanTotal > 0 ? 'warn' : 'good'))
+          for (const d of mem.directories ?? []) memRows.push(row(`${t('healthDir')} ${d.name}`, String(d.activeMemories)))
+          memRows.push(row(t('healthEphemeral'), String(mem.ephemeralCount ?? 0)))
+          memRows.push(row(t('healthSettings'), `autoDistill=${mem.settings?.autoDistill === true ? 'on' : 'off'} · allSessionsDefault=${mem.settings?.allSessionsDefault === true ? 'on' : 'off'} · autoMatch=${mem.settings?.autoMatch === true ? 'on' : 'off'} · workspaceBinding=${mem.settings?.workspaceBinding === true ? 'on' : 'off'}`))
+        } else memRows.push(row('error', report.memErr ?? t('healthUnavailable'), 'bad'))
+        /* B 段：知识库条目层 + C 段：档案层（同一路由返回） */
+        const kb = report.kb
+        const kbRows = []
+        const archRows = []
+        if (kb?.ready !== true) {
+          kbRows.push(row('error', report.kbErr ?? t('healthUnavailable'), 'bad'))
+          archRows.push(row('error', report.kbErr ?? t('healthUnavailable'), 'bad'))
+        } else if (kb.error) {
+          kbRows.push(row('error', kb.error, 'bad'))
+          archRows.push(row('error', kb.error, 'bad'))
+        } else {
+          kbRows.push(row(t('healthItems'), `active=${num(kb.items?.active)} · deleted=${num(kb.items?.deleted)} · expired=${num(kb.items?.expired)}`))
+          kbRows.push(row(t('healthKbFts'), `base=${num(kb.fts?.baseRows)} · rich=${num(kb.fts?.richRows)}`))
+          const missing = kb.vector?.missingCount
+          kbRows.push(row(t('healthVec'), kb.vector?.available === true
+            ? ((missing ?? 0) > 0 ? `missing=${missing} — ${t('healthVecMissing')}` : `ready（missing=0）`)
+            : t('healthVecUnavailable'), kb.vector?.available === true ? ((missing ?? 0) > 0 ? 'warn' : 'good') : 'warn'))
+          kbRows.push(row(t('healthExpansionCache'), num(kb.expansionCache)))
+          const arch = kb.archive
+          if (arch?.chunks === null || arch?.chunks === undefined) archRows.push(row('arch_*', t('healthArchEmpty'), 'warn'))
+          else {
+            archRows.push(row('arch_chunks', num(arch.chunks), arch.chunks === 0 ? 'warn' : undefined))
+            archRows.push(row('arch_fts', num(arch.ftsRows)))
+            archRows.push(row('arch_vec', num(arch.vecRows)))
+            archRows.push(row('arch_meta', num(arch.metaRows)))
+            if (arch.chunks === 0) archRows.push(row('', t('healthArchEmpty'), 'warn'))
+          }
+        }
+        sections = h('div', { style: { display: 'grid', gap: 16 } },
+          section('mem', t('healthMemSection'), memRows),
+          section('kb', t('healthKbSection'), kbRows),
+          section('arch', t('healthArchSection'), archRows))
+      }
+      return h('div', { style: { display: 'grid', gap: 8 } },
+        h('strong', { style: { fontSize: 13 } }, t('healthTitle')),
+        h('p', { style: styles.note }, t('healthDesc')),
+        h('div', null, h('button', { onClick: () => void run(), disabled: busy, style: styles.btn }, busy ? t('healthRunning') : t('healthRun'))),
+        err !== '' ? h('div', { style: styles.err }, `${t('healthFailed')}: ${err}`) : null,
+        sections)
+    }
+
     function apply(ctx) {
       if (!ctx.slots) {
         // 防御：inject 声明链断裂时绝不炸 shell——丢一张卡片远好于崩整页。
@@ -270,7 +412,7 @@ window.__ModuleLoader__.load({
         order: 36,
         locale: NS,
         label: () => t('label'),
-      }, () => h(VecCard)))
+      }, () => h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(HealthCard))))
     }
     exports.apply = apply
     // shell 的 ModuleLoader 按本 bundle 导出的 inject 给 apply 的 ctx 挂服务（OFM/webin 同款）；
