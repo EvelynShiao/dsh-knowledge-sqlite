@@ -65,6 +65,8 @@ window.__ModuleLoader__.load({
       healthTitle: '记忆与知识库体检',
       healthDesc: '一次体检三处：session-kit 记忆库（memory.sqlite：表行数/FTS 一致性/孤儿引用）、知识库条目层（items+向量缺口）、对话档案层（arch_*，同库不同表）。全程只读，不修任何数据。',
       healthRun: '开始体检',
+      healthRebuildFts: '修复词法索引',
+      healthRebuilt: '已重建词法索引条目数',
       healthRunning: '体检中…',
       healthFailed: '体检请求失败',
       healthMemSection: 'A · 记忆库（session-kit / memory.sqlite）',
@@ -128,6 +130,8 @@ window.__ModuleLoader__.load({
       healthTitle: 'Memory & knowledge checkup',
       healthDesc: 'One checkup, three stores: session-kit memory database (memory.sqlite: table rows / FTS consistency / orphan refs), knowledge entry layer (items + vector gaps), and the conversation archive layer (arch_*, same database, separate tables). Read-only — never modifies data.',
       healthRun: 'Run checkup',
+      healthRebuildFts: 'Rebuild lexical indexes',
+      healthRebuilt: 'Rebuilt lexical index entries',
       healthRunning: 'Checking…',
       healthFailed: 'Checkup request failed',
       healthMemSection: 'A · Memory database (session-kit / memory.sqlite)',
@@ -305,6 +309,7 @@ window.__ModuleLoader__.load({
       const [report, setReport] = useState(null)
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState('')
+      const [repairNote, setRepairNote] = useState('')
       const run = async () => {
         setBusy(true); setErr(''); setReport(null)
         try {
@@ -319,6 +324,14 @@ window.__ModuleLoader__.load({
             kbErr: kbRes?.ok === true ? null : String(kbRes?.error ?? `HTTP ${kbRes?.status ?? '?'}`)
           })
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+      }
+      const rebuildFts = async () => {
+        setBusy(true); setErr(''); setRepairNote('')
+        try {
+          const result = await fetchJson('/health/rebuild-fts', { method: 'POST', body: '{}' })
+          setRepairNote(`${t('healthRebuilt')}: ${result?.value?.rebuilt ?? 0}`)
+          await run()
+        } catch (e) { setErr(String(e?.message ?? e)); setBusy(false) }
       }
       const fmtBytes = (n) => (typeof n === 'number' && n >= 0 ? `${(n / 1048576).toFixed(1)} MB` : '—')
       const num = (v) => (v === null || v === undefined ? '缺失/损坏' : String(v))
@@ -384,7 +397,11 @@ window.__ModuleLoader__.load({
       return h('div', { style: { display: 'grid', gap: 8 } },
         h('strong', { style: { fontSize: 13 } }, t('healthTitle')),
         h('p', { style: styles.note }, t('healthDesc')),
-        h('div', null, h('button', { onClick: () => void run(), disabled: busy, style: styles.btn }, busy ? t('healthRunning') : t('healthRun'))),
+        h('div', { style: { display: 'flex', gap: 8 } },
+          h('button', { onClick: () => void run(), disabled: busy, style: styles.btn }, busy ? t('healthRunning') : t('healthRun')),
+          report?.kb?.ready === true && ((report.kb.items?.total ?? 0) > 0 && (report.kb.fts?.baseRows ?? 0) === 0)
+            ? h('button', { onClick: () => void rebuildFts(), disabled: busy, style: styles.btn }, t('healthRebuildFts')) : null),
+        repairNote !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, repairNote) : null,
         err !== '' ? h('div', { style: styles.err }, `${t('healthFailed')}: ${err}`) : null,
         sections)
     }
