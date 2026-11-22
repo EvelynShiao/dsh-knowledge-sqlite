@@ -370,7 +370,7 @@ window.__ModuleLoader__.load({
           if (arch?.chunks === null || arch?.chunks === undefined) archRows.push(row('arch_*', t('healthArchEmpty'), 'warn'))
           else {
             archRows.push(row('arch_chunks', num(arch.chunks), arch.chunks === 0 ? 'warn' : undefined))
-            archRows.push(row('arch_fts', num(arch.ftsRows)))
+            archRows.push(row('词法检索', arch.lexicalMode === 'fts' ? 'arch_fts' : 'arch_chunks.text（LIKE，正常实现）'))
             archRows.push(row('arch_vec', num(arch.vecRows)))
             archRows.push(row('arch_meta', num(arch.metaRows)))
             if (arch.chunks === 0) archRows.push(row('', t('healthArchEmpty'), 'warn'))
