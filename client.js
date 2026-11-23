@@ -109,7 +109,8 @@ window.__ModuleLoader__.load({
       modelCurrent: '当前生效：',
       modelCurrentSession: '跟随会话模型',
       modelSaveFailed: '保存失败',
-      modelTimeoutNote: '扩展超时固定 3000ms，超时即降级词法，不阻塞检索。',
+      modelTimeoutLabel: '扩展超时（秒）',
+      modelTimeoutDesc: '1-60 秒，超时即降级词法，不阻塞检索。',
     }
     const en = {
       label: 'Knowledge base',
@@ -188,7 +189,8 @@ window.__ModuleLoader__.load({
       modelCurrent: 'Effective now: ',
       modelCurrentSession: 'follow session model',
       modelSaveFailed: 'Save failed',
-      modelTimeoutNote: 'Expansion timeout is fixed at 3000ms; on timeout it degrades to lexical and never blocks retrieval.',
+      modelTimeoutLabel: 'Expansion timeout (seconds)',
+      modelTimeoutDesc: '1-60 seconds; on timeout it degrades to lexical and never blocks retrieval.',
     }
     let t = (key, vars) => {
       let out = zh[key] ?? key
@@ -465,6 +467,7 @@ window.__ModuleLoader__.load({
       const [follow, setFollow] = useState(true)
       const [provider, setProvider] = useState('')
       const [model, setModel] = useState('')
+      const [timeoutSec, setTimeoutSec] = useState(3)
       const [busy, setBusy] = useState(false)
       const [note, setNote] = useState('')
       const [err, setErr] = useState('')
@@ -475,6 +478,7 @@ window.__ModuleLoader__.load({
           setFollow(data.mode !== 'fixed')
           setProvider(data.provider ?? '')
           setModel(data.model ?? '')
+          setTimeoutSec(Math.max(1, Math.min(60, Math.round((Number(data.timeoutMs) || 3000) / 1000))))
           setErr('')
         } catch (e) { setErr(String(e?.message ?? e)) }
       }, [])
@@ -483,6 +487,7 @@ window.__ModuleLoader__.load({
         setBusy(true); setNote(''); setErr('')
         try {
           const body = follow ? { mode: 'session' } : { mode: 'fixed', provider: provider.trim(), model: model.trim() }
+          body.timeoutSeconds = Math.max(1, Math.min(60, Math.trunc(Number(timeoutSec) || 3)))
           const result = await fetchJson('/model-config', { method: 'POST', body: JSON.stringify(body) })
           setNote(result?.note ?? t('modelSaved'))
           await load()
@@ -506,11 +511,14 @@ window.__ModuleLoader__.load({
             h('input', { value: provider, onChange: (e) => setProvider(e.target.value), placeholder: 'inai-free', style: styles.input })),
           h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } }, t('modelModelLabel'),
             h('input', { value: model, onChange: (e) => setModel(e.target.value), placeholder: 'z-ai/glm-5.3-flash', style: styles.input }))),
+        h('label', { style: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, flexWrap: 'wrap' } },
+          h('span', null, t('modelTimeoutLabel')),
+          h('input', { type: 'number', min: 1, max: 60, step: 1, value: timeoutSec, onChange: (e) => setTimeoutSec(Math.max(1, Math.min(60, Math.trunc(Number(e.target.value) || 3)))), style: { ...styles.input, width: 70 } }),
+          h('span', { style: styles.note }, t('modelTimeoutDesc'))),
         h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 } },
           h('span', { style: styles.note }, `${t('modelCurrent')}${current}`),
           h('button', { onClick: () => void save(), disabled: busy || (follow === false && !fixedReady), style: styles.btn },
             busy ? t('modelSaving') : t('modelSave'))),
-        h('div', { style: styles.note }, t('modelTimeoutNote')),
         note !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, note) : null,
         err !== '' ? h('div', { style: styles.err }, `${t('modelSaveFailed')}: ${err}`) : null)
     }
