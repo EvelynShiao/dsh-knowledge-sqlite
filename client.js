@@ -71,6 +71,7 @@ window.__ModuleLoader__.load({
       waitingLog: '（等待输出…）',
       healthTitle: '记忆与知识库体检',
       healthDesc: '一次体检三处：session-kit 记忆库（memory.sqlite：表行数/FTS 一致性/孤儿引用）、知识库条目层（items+向量缺口）、对话档案层（arch_*，同库不同表）。全程只读，不修任何数据。',
+      healthDescNoMem: '一次体检两处：知识库条目层（items+向量缺口）、对话档案层（arch_*，同库不同表）。全程只读，不修任何数据。',
       healthRun: '开始体检',
       healthRebuildFts: '修复词法索引',
       healthRebuilt: '已重建词法索引条目数',
@@ -96,7 +97,6 @@ window.__ModuleLoader__.load({
       healthExpansionCache: '查询扩展缓存',
       healthArchEmpty: '档案层为空或未建（archives_search 首次使用后才有数据）',
       healthUnavailable: '服务未加载（插件改动需重启 DSH 生效）',
-      healthSkOff: 'session-kit 插件未启用——记忆库体检段已隐藏（启用后刷新本页恢复）。',
       modelTitle: '模型设置',
       modelDesc: '知识库检索（knowledge_search）查库前会先调一次小模型，把查询改写成几个同义问法以提升召回（L1 查询扩展）；失败会自动降级纯词法检索，不影响结果可用性。向量嵌入模型不可换（与索引口径绑定）。',
       modelFollowLabel: '跟随当前会话模型',
@@ -106,6 +106,14 @@ window.__ModuleLoader__.load({
       modelSave: '保存',
       modelSaving: '保存中…',
       modelSaved: '已保存并即刻生效（扩展缓存已清）',
+      promptTitle: '知识库说明（随知识库同步）',
+      promptDesc: '这些说明会直接展示给 AI。保存在 knowledge.sqlite 的 knowledge_settings 表中，随 dsh-sync 的 knowledge 组同步；不修改插件源码。留空工具描述则使用通用默认。',
+      promptEnabled: '在系统提示中附带自定义资料说明',
+      promptSearch: '知识条目工具描述',
+      promptArchives: '对话档案工具描述',
+      promptCustom: '自定义资料说明（可选）',
+      promptSave: '保存说明',
+      promptSaved: '说明已保存，将随知识库同步',
       modelCurrent: '当前生效：',
       modelCurrentSession: '跟随会话模型',
       modelSaveFailed: '保存失败',
@@ -151,6 +159,7 @@ window.__ModuleLoader__.load({
       waitingLog: '(waiting for output…)',
       healthTitle: 'Memory & knowledge checkup',
       healthDesc: 'One checkup, three stores: session-kit memory database (memory.sqlite: table rows / FTS consistency / orphan refs), knowledge entry layer (items + vector gaps), and the conversation archive layer (arch_*, same database, separate tables). Read-only — never modifies data.',
+      healthDescNoMem: 'One checkup, two stores: knowledge entry layer (items + vector gaps) and the conversation archive layer (arch_*, same database, separate tables). Read-only — never modifies data.',
       healthRun: 'Run checkup',
       healthRebuildFts: 'Rebuild lexical indexes',
       healthRebuilt: 'Rebuilt lexical index entries',
@@ -176,7 +185,6 @@ window.__ModuleLoader__.load({
       healthExpansionCache: 'Query expansion cache',
       healthArchEmpty: 'Archive layer is empty or not created (data appears after first archives_search use)',
       healthUnavailable: 'Service not loaded (plugin changes need a DSH restart)',
-      healthSkOff: 'The dsh-session-kit plugin is disabled — the memory checkup section is hidden (enable it and refresh to restore).',
       modelTitle: 'Model settings',
       modelDesc: 'Before querying the store, knowledge_search calls a small model once to rewrite the query into paraphrases for better recall (L1 query expansion); on failure it silently falls back to lexical-only search — results stay usable. The embedding model is not switchable (tied to the index).',
       modelFollowLabel: 'Follow the current session model',
@@ -186,6 +194,14 @@ window.__ModuleLoader__.load({
       modelSave: 'Save',
       modelSaving: 'Saving…',
       modelSaved: 'Saved and effective immediately (expansion cache cleared)',
+      promptTitle: 'Knowledge guidance (synced with database)',
+      promptDesc: 'Shown to AI. Stored in knowledge_settings inside knowledge.sqlite and synced by dsh-sync; never changes plugin source. Empty tool descriptions use generic defaults.',
+      promptEnabled: 'Append custom collection guidance to the system prompt',
+      promptSearch: 'Knowledge entry tool description',
+      promptArchives: 'Conversation archive tool description',
+      promptCustom: 'Custom collection guidance (optional)',
+      promptSave: 'Save guidance',
+      promptSaved: 'Guidance saved and ready to sync',
       modelCurrent: 'Effective now: ',
       modelCurrentSession: 'follow session model',
       modelSaveFailed: 'Save failed',
@@ -360,8 +376,10 @@ window.__ModuleLoader__.load({
       const run = async () => {
         setBusy(true); setErr(''); setReport(null)
         try {
+          /* session-kit 未启用（skEnabled=false）时不发记忆体检请求——A 段隐藏后 mem 数据无人消费，
+             发过去只会吃到 401 还浪费一次调用。mem=null + memErr=null 即可。 */
           const [memRes, kbRes] = await Promise.all([
-            fetch(memoryHealthPath).then((r) => r.json()),
+            skEnabled ? fetch(memoryHealthPath).then((r) => r.json()) : Promise.resolve(null),
             fetchJson('/health')
           ])
           setReport({
@@ -446,14 +464,13 @@ window.__ModuleLoader__.load({
       }
       return h('div', { style: { display: 'grid', gap: 8 } },
         h('strong', { style: { fontSize: 13 } }, t('healthTitle')),
-        h('p', { style: styles.note }, t('healthDesc')),
+        h('p', { style: styles.note }, skEnabled ? t('healthDesc') : t('healthDescNoMem')),
         h('div', { style: { display: 'flex', gap: 8 } },
           h('button', { onClick: () => void run(), disabled: busy, style: styles.btn }, busy ? t('healthRunning') : t('healthRun')),
           report?.kb?.ready === true && ((report.kb.items?.total ?? 0) > 0 && (report.kb.fts?.baseRows ?? 0) === 0)
             ? h('button', { onClick: () => void rebuildFts(), disabled: busy, style: styles.btn }, t('healthRebuildFts')) : null),
         repairNote !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, repairNote) : null,
         err !== '' ? h('div', { style: styles.err }, `${t('healthFailed')}: ${err}`) : null,
-        skEnabled ? null : h('div', { style: styles.note }, t('healthSkOff')),
         sections)
     }
 
@@ -523,6 +540,39 @@ window.__ModuleLoader__.load({
         err !== '' ? h('div', { style: styles.err }, `${t('modelSaveFailed')}: ${err}`) : null)
     }
 
+    function PromptCard() {
+      const [value, setValue] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState('')
+      const [err, setErr] = useState('')
+      const load = useCallback(async () => {
+        try { const data = await fetchJson('/prompt-config'); setValue(data.value ?? data); setErr('') }
+        catch (e) { setErr(String(e?.message ?? e)) }
+      }, [])
+      useEffect(() => { void load() }, [load])
+      const save = async () => {
+        setBusy(true); setErr(''); setNote('')
+        try {
+          const data = await fetchJson('/prompt-config', { method: 'POST', body: JSON.stringify(value) })
+          setValue(data.value ?? value); setNote(t('promptSaved'))
+        } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+      }
+      const field = (key, label, rows = 3) => h('label', { style: { display: 'grid', gap: 4, fontSize: 12 } }, label,
+        h('textarea', { value: value?.[key] ?? '', rows, onChange: (e) => setValue((old) => ({ ...old, [key]: e.target.value })), style: { ...styles.input, resize: 'vertical', fontFamily: 'inherit' } }))
+      return h('div', { style: { display: 'grid', gap: 8 } },
+        h('strong', { style: { fontSize: 13 } }, t('promptTitle')),
+        h('p', { style: styles.note }, t('promptDesc')),
+        h('label', { style: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 } },
+          h('input', { type: 'checkbox', checked: value?.enabled === true, onChange: (e) => setValue((old) => ({ ...old, enabled: e.target.checked })) }),
+          t('promptEnabled')),
+        field('searchDescription', t('promptSearch'), 4),
+        field('archivesDescription', t('promptArchives'), 4),
+        field('customText', t('promptCustom'), 5),
+        h('div', null, h('button', { onClick: () => void save(), disabled: busy || value === null, style: styles.btn }, t('promptSave'))),
+        note !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, note) : null,
+        err !== '' ? h('div', { style: styles.err }, err) : null)
+    }
+
     function apply(ctx) {
       if (!ctx.slots) {
         // 防御：inject 声明链断裂时绝不炸 shell——丢一张卡片远好于崩整页。
@@ -546,7 +596,7 @@ window.__ModuleLoader__.load({
         order: 36,
         locale: NS,
         label: () => t('label'),
-      }, () => h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(ModelCard), h(HealthCard))))
+      }, () => h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(ModelCard), h(PromptCard), h(HealthCard))))
     }
     exports.apply = apply
     // shell 的 ModuleLoader 按本 bundle 导出的 inject 给 apply 的 ctx 挂服务（OFM/webin 同款）；
