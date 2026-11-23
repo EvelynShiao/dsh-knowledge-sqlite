@@ -2,8 +2,15 @@
  * dsh-knowledge-sqlite — browser half（2026-11-11）。
  *
  * Contributes one settings section (`settings.section` id `knowledge-sqlite`,
- * order 36)：向量运行时状态卡片——可用性、模型目录、一键安装（跑
- * install-vec-runtime.ps1/sh，下载 ~24MB bge 模型）、自检（512 维 / L2≈1.0）。
+ * order 36)，三张卡片：
+ *   VecCard   — 向量运行时状态：可用性、模型目录、一键安装（跑 install-vec-runtime.ps1/sh，
+ *               下载 ~24MB bge 模型）、自检（512 维 / L2≈1.0）；
+ *   ModelCard — 模型设置（2026-11-23）：知识库检索（L1 查询扩展）用哪个模型——
+ *               跟随当前会话模型或专用 provider/model，真源 cordis.patch.yml 的
+ *               queryExpansion 块（/api/knowledge-sqlite/model-config 读写）；
+ *   HealthCard — 记忆与知识库体检（A 记忆库段在 session-kit 插件未启用时自动隐藏）。
+ *
+ * 会话标题生成模型的设置不在本插件（放 adapter-compat 的 exit 面板）——它不属于知识库。
  *
  * 背景（用户定案「UI 层面的下载解决方案」）：向量层缺失时本插件自动降级纯词法
  * 检索、功能不受影响，但此前降级是纯静默的——用户不知道语义检索没生效、更不知
@@ -69,9 +76,9 @@ window.__ModuleLoader__.load({
       healthRebuilt: '已重建词法索引条目数',
       healthRunning: '体检中…',
       healthFailed: '体检请求失败',
-      healthMemSection: 'A · 记忆库（session-kit / memory.sqlite）',
-      healthKbSection: 'B · 知识库条目层（items）',
-      healthArchSection: 'C · 对话档案层（arch_*）',
+      healthMemSection: '记忆库（session-kit / memory.sqlite）',
+      healthKbSection: '知识库条目层（items）',
+      healthArchSection: '对话档案层（arch_*）',
       healthTable: '表',
       healthFts: 'FTS 索引',
       healthFtsSynced: '一致',
@@ -89,6 +96,20 @@ window.__ModuleLoader__.load({
       healthExpansionCache: '查询扩展缓存',
       healthArchEmpty: '档案层为空或未建（archives_search 首次使用后才有数据）',
       healthUnavailable: '服务未加载（插件改动需重启 DSH 生效）',
+      healthSkOff: 'session-kit 插件未启用——记忆库体检段已隐藏（启用后刷新本页恢复）。',
+      modelTitle: '模型设置',
+      modelDesc: '知识库检索（knowledge_search）查库前会先调一次小模型，把查询改写成几个同义问法以提升召回（L1 查询扩展）；失败会自动降级纯词法检索，不影响结果可用性。向量嵌入模型不可换（与索引口径绑定）。',
+      modelFollowLabel: '跟随当前会话模型',
+      modelFollowDesc: '开：扩展请求走当前会话正在用的模型（会话走免费车道则扩展同样免费）。关：用下方专用模型。',
+      modelProviderLabel: 'Provider',
+      modelModelLabel: 'Model',
+      modelSave: '保存',
+      modelSaving: '保存中…',
+      modelSaved: '已保存并即刻生效（扩展缓存已清）',
+      modelCurrent: '当前生效：',
+      modelCurrentSession: '跟随会话模型',
+      modelSaveFailed: '保存失败',
+      modelTimeoutNote: '扩展超时固定 3000ms，超时即降级词法，不阻塞检索。',
     }
     const en = {
       label: 'Knowledge base',
@@ -134,9 +155,9 @@ window.__ModuleLoader__.load({
       healthRebuilt: 'Rebuilt lexical index entries',
       healthRunning: 'Checking…',
       healthFailed: 'Checkup request failed',
-      healthMemSection: 'A · Memory database (session-kit / memory.sqlite)',
-      healthKbSection: 'B · Knowledge entry layer (items)',
-      healthArchSection: 'C · Conversation archive layer (arch_*)',
+      healthMemSection: 'Memory database (session-kit / memory.sqlite)',
+      healthKbSection: 'Knowledge entry layer (items)',
+      healthArchSection: 'Conversation archive layer (arch_*)',
       healthTable: 'Table',
       healthFts: 'FTS index',
       healthFtsSynced: 'in sync',
@@ -154,6 +175,20 @@ window.__ModuleLoader__.load({
       healthExpansionCache: 'Query expansion cache',
       healthArchEmpty: 'Archive layer is empty or not created (data appears after first archives_search use)',
       healthUnavailable: 'Service not loaded (plugin changes need a DSH restart)',
+      healthSkOff: 'The dsh-session-kit plugin is disabled — the memory checkup section is hidden (enable it and refresh to restore).',
+      modelTitle: 'Model settings',
+      modelDesc: 'Before querying the store, knowledge_search calls a small model once to rewrite the query into paraphrases for better recall (L1 query expansion); on failure it silently falls back to lexical-only search — results stay usable. The embedding model is not switchable (tied to the index).',
+      modelFollowLabel: 'Follow the current session model',
+      modelFollowDesc: 'On: expansion requests use the model the current session is using (a free-lane session keeps expansion free). Off: use the dedicated model below.',
+      modelProviderLabel: 'Provider',
+      modelModelLabel: 'Model',
+      modelSave: 'Save',
+      modelSaving: 'Saving…',
+      modelSaved: 'Saved and effective immediately (expansion cache cleared)',
+      modelCurrent: 'Effective now: ',
+      modelCurrentSession: 'follow session model',
+      modelSaveFailed: 'Save failed',
+      modelTimeoutNote: 'Expansion timeout is fixed at 3000ms; on timeout it degrades to lexical and never blocks retrieval.',
     }
     let t = (key, vars) => {
       let out = zh[key] ?? key
@@ -183,6 +218,7 @@ window.__ModuleLoader__.load({
       err: { color: 'var(--dsw-alias-state-error-primary, #d33)', fontSize: 12 },
       alert: { border: '1.5px solid var(--dsw-alias-state-error-primary, #d33)', background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d33) 10%, transparent)', borderRadius: 8, padding: 10, display: 'grid', gap: 6 },
       alertTitle: { color: 'var(--dsw-alias-state-error-primary, #d33)', fontWeight: 700, fontSize: 13 },
+      input: { padding: '5px 8px', borderRadius: 8, border: '1px solid var(--dsw-alias-border-strong, #888)', background: 'transparent', color: 'inherit', fontSize: 12 },
     }
 
     function VecCard() {
@@ -310,6 +346,15 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState('')
       const [repairNote, setRepairNote] = useState('')
+      /* session-kit 启用探测（2026-11-23 用户要求：插件未启用就不显示记忆库体检段）。
+         禁用插件的路由被宿主网关统一拒 401（本插件同款行为）；404/200/网络错 → 保守视为启用。
+         探测借道 memoryHealthPath（GET 一次轻体检，只看状态码，结果不用于渲染）。 */
+      const [skEnabled, setSkEnabled] = useState(true)
+      useEffect(() => {
+        let alive = true
+        fetch(memoryHealthPath, { method: 'GET' }).then((r) => { if (alive) setSkEnabled(r.status !== 401) }).catch(() => { /* 网络错误保守显示 */ })
+        return () => { alive = false }
+      }, [])
       const run = async () => {
         setBusy(true); setErr(''); setReport(null)
         try {
@@ -389,10 +434,13 @@ window.__ModuleLoader__.load({
             if (arch.chunks === 0) archRows.push(row('', t('healthArchEmpty'), 'warn'))
           }
         }
+        /* 段落编号动态化：session-kit 未启用时记忆库段隐藏，后续段自动补位（A/B 重排）。 */
+        let letter = 0
+        const tag = () => `${String.fromCharCode(65 + letter++)} · `
         sections = h('div', { style: { display: 'grid', gap: 16 } },
-          section('mem', t('healthMemSection'), memRows),
-          section('kb', t('healthKbSection'), kbRows),
-          section('arch', t('healthArchSection'), archRows))
+          skEnabled ? section('mem', tag() + t('healthMemSection'), memRows) : null,
+          section('kb', tag() + t('healthKbSection'), kbRows),
+          section('arch', tag() + t('healthArchSection'), archRows))
       }
       return h('div', { style: { display: 'grid', gap: 8 } },
         h('strong', { style: { fontSize: 13 } }, t('healthTitle')),
@@ -403,7 +451,68 @@ window.__ModuleLoader__.load({
             ? h('button', { onClick: () => void rebuildFts(), disabled: busy, style: styles.btn }, t('healthRebuildFts')) : null),
         repairNote !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, repairNote) : null,
         err !== '' ? h('div', { style: styles.err }, `${t('healthFailed')}: ${err}`) : null,
+        skEnabled ? null : h('div', { style: styles.note }, t('healthSkOff')),
         sections)
+    }
+
+    /* 模型设置卡（2026-11-23）：知识库检索（L1 查询扩展）用哪个模型。
+       真源 = cordis.patch.yml knowledge-sqlite 条目的 queryExpansion 块。
+       「跟随当前会话模型」= 清空 provider/model（expand.js 走②级会话→③全局默认兜底）；
+       固定模型 = 配齐 provider+model（expand.js 走①级专用路由）。
+       保存后服务端就地热更运行中的 expander 并清扩展缓存，免重启即刻生效。 */
+    function ModelCard() {
+      const [cfg, setCfg] = useState(null)
+      const [follow, setFollow] = useState(true)
+      const [provider, setProvider] = useState('')
+      const [model, setModel] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState('')
+      const [err, setErr] = useState('')
+      const load = useCallback(async () => {
+        try {
+          const data = await fetchJson('/model-config')
+          setCfg(data)
+          setFollow(data.mode !== 'fixed')
+          setProvider(data.provider ?? '')
+          setModel(data.model ?? '')
+          setErr('')
+        } catch (e) { setErr(String(e?.message ?? e)) }
+      }, [])
+      useEffect(() => { void load() }, [load])
+      const save = async () => {
+        setBusy(true); setNote(''); setErr('')
+        try {
+          const body = follow ? { mode: 'session' } : { mode: 'fixed', provider: provider.trim(), model: model.trim() }
+          const result = await fetchJson('/model-config', { method: 'POST', body: JSON.stringify(body) })
+          setNote(result?.note ?? t('modelSaved'))
+          await load()
+        } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+      }
+      const fixedReady = follow === false && provider.trim() !== '' && model.trim() !== ''
+      const current = cfg === null ? t('loading')
+        : cfg.mode === 'fixed' && cfg.provider && cfg.model
+        ? `${cfg.provider} / ${cfg.model}`
+        : t('modelCurrentSession')
+      return h('div', { style: { display: 'grid', gap: 8 } },
+        h('strong', { style: { fontSize: 13 } }, t('modelTitle')),
+        h('p', { style: styles.note }, t('modelDesc')),
+        h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } },
+          h('span', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+            h('input', { type: 'checkbox', checked: follow, onChange: (e) => setFollow(e.target.checked) }),
+            h('strong', null, t('modelFollowLabel'))),
+          h('span', { style: styles.note }, t('modelFollowDesc'))),
+        follow ? null : h('div', { style: { display: 'grid', gap: 6 } },
+          h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } }, t('modelProviderLabel'),
+            h('input', { value: provider, onChange: (e) => setProvider(e.target.value), placeholder: 'inai-free', style: styles.input })),
+          h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } }, t('modelModelLabel'),
+            h('input', { value: model, onChange: (e) => setModel(e.target.value), placeholder: 'z-ai/glm-5.3-flash', style: styles.input }))),
+        h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 } },
+          h('span', { style: styles.note }, `${t('modelCurrent')}${current}`),
+          h('button', { onClick: () => void save(), disabled: busy || (follow === false && !fixedReady), style: styles.btn },
+            busy ? t('modelSaving') : t('modelSave'))),
+        h('div', { style: styles.note }, t('modelTimeoutNote')),
+        note !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, note) : null,
+        err !== '' ? h('div', { style: styles.err }, `${t('modelSaveFailed')}: ${err}`) : null)
     }
 
     function apply(ctx) {
@@ -429,7 +538,7 @@ window.__ModuleLoader__.load({
         order: 36,
         locale: NS,
         label: () => t('label'),
-      }, () => h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(HealthCard))))
+      }, () => h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(ModelCard), h(HealthCard))))
     }
     exports.apply = apply
     // shell 的 ModuleLoader 按本 bundle 导出的 inject 给 apply 的 ctx 挂服务（OFM/webin 同款）；
