@@ -218,6 +218,7 @@ window.__ModuleLoader__.load({
       }
       const remove = (index) => onChange(items.filter((_, i) => i !== index))
       const addFixed = () => onChange([...items, { type: 'fixed', provider: '', model: '', reasoningEffort: undefined }])
+      const addSession = () => onChange([...items, { type: 'session' }])
 
       const rows = items.map((item, index) => {
         const isSession = item.type === 'session'
@@ -295,7 +296,8 @@ window.__ModuleLoader__.load({
 
       return h('div', { className: 'dsh-chain-editor' },
         ...rows,
-        h(primitives.Button, { variant: 'outline', className: 'dsh-chain-add', disabled: busy, onClick: addFixed }, props.addLabel))
+        h(primitives.Button, { variant: 'outline', className: 'dsh-chain-add', disabled: busy, onClick: addFixed }, props.addLabel),
+        h(primitives.Button, { variant: 'outline', className: 'dsh-chain-add', disabled: busy, onClick: addSession }, props.addSessionLabel))
     }
 
     /* ── 样式：注入一次（与蒸馏链条卡同款外观，类名加 dsh-chain- 前缀避免撞宿主）── */
@@ -410,6 +412,7 @@ window.__ModuleLoader__.load({
       modelChainHint: '按顺序逐项尝试：某项失败（配额、超时等）自动换下一项，全部失败＝降级纯词法检索；空链条＝使用当前会话模型。',
       chainFollowSession: '跟随会话使用模型',
       chainAdd: '添加固定渠道',
+      chainAddSession: '添加跟随会话',
       chainReasoning: '思考度',
       chainProviderDefault: '跟随提供商默认',
       chainSession: '跟随会话',
@@ -515,6 +518,7 @@ window.__ModuleLoader__.load({
       modelChainHint: 'Tried in order: on failure (quota, timeout, ...) the next item is tried; if all fail it degrades to lexical search. An empty chain = use the current session model.',
       chainFollowSession: 'Follow the session model',
       chainAdd: 'Add fixed lane',
+      chainAddSession: 'Add follow-session',
       chainReasoning: 'Reasoning',
       chainProviderDefault: 'Provider default',
       chainSession: 'Follow session',
@@ -881,6 +885,7 @@ window.__ModuleLoader__.load({
               chain, onChange: setChain, directory, t, busy,
               followLabel: t('chainFollowSession'),
               addLabel: t('chainAdd'),
+              addSessionLabel: t('chainAddSession'),
               reasoningLabel: t('chainReasoning'),
               providerDefaultLabel: t('chainProviderDefault'),
             }),
