@@ -116,6 +116,7 @@ window.__ModuleLoader__.load({
       promptCustom: '自定义资料说明（可选）',
       promptSave: '保存说明',
       promptSaved: '说明已保存，将随知识库同步',
+      promptSearchNote: '注：「知识条目」工具（knowledge_search）由本插件自身提供，不依赖 session-kit——session-kit 关闭时它照常可用，所以这项描述不需要隐藏。',
       modelCurrent: '当前生效：',
       modelCurrentSession: '跟随会话模型',
       modelSaveFailed: '保存失败',
@@ -206,6 +207,7 @@ window.__ModuleLoader__.load({
       promptCustom: 'Custom collection guidance (optional)',
       promptSave: 'Save guidance',
       promptSaved: 'Guidance saved and ready to sync',
+      promptSearchNote: 'Note: the "knowledge entry" tool (knowledge_search) is provided by this plugin itself, not by session-kit — it keeps working when session-kit is disabled, so this description stays visible.',
       modelCurrent: 'Effective now: ',
       modelCurrentSession: 'follow session model',
       modelSaveFailed: 'Save failed',
@@ -241,6 +243,20 @@ window.__ModuleLoader__.load({
       alert: { border: '1.5px solid var(--dsw-alias-state-error-primary, #d33)', background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d33) 10%, transparent)', borderRadius: 8, padding: 10, display: 'grid', gap: 6 },
       alertTitle: { color: 'var(--dsw-alias-state-error-primary, #d33)', fontWeight: 700, fontSize: 13 },
       input: { padding: '5px 8px', borderRadius: 8, border: '1px solid var(--dsw-alias-border-strong, #888)', background: 'transparent', color: 'inherit', fontSize: 12 },
+    }
+
+    /* session-kit 启用状态共享 hook（2026-11-23 二次智能化）：
+       HealthCard 用它驱动「记忆库体检段/标题/描述/记忆检测请求」的整体显隐。
+       判据 = r.ok（HTTP 2xx）：实测关闭后路由回 404/空响应体（不是 401）。
+       失败保守视为启用（网络抖动不该把正常 UI 藏掉）。 */
+    function useSessionKitEnabled() {
+      const [enabled, setEnabled] = useState(true)
+      useEffect(() => {
+        let alive = true
+        fetch(memoryHealthPath, { method: 'GET' }).then((r) => { if (alive) setEnabled(r.ok === true) }).catch(() => { /* 保守显示 */ })
+        return () => { alive = false }
+      }, [])
+      return enabled
     }
 
     function VecCard() {
@@ -368,17 +384,9 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState('')
       const [repairNote, setRepairNote] = useState('')
-      /* session-kit 启用探测（2026-11-23 用户要求：插件未启用就不显示记忆库体检段、不发相关检测）。
-         判据 = r.ok（HTTP 2xx）：实测关闭后路由回 404/空响应体（不是 401），只认 401 会误判。
-         探测借道 memoryHealthPath（GET 一次轻体检，只看状态码，结果不用于渲染）。 */
-      const [skEnabled, setSkEnabled] = useState(true)
-      useEffect(() => {
-        let alive = true
-        /* 启用判据 = HTTP 2xx（r.ok）。实测：关闭 session-kit 后其路由返回 404/空响应体，
-           只认 401 会误判为仍启用（2026-11-23 实测复现）。 */
-        fetch(memoryHealthPath, { method: 'GET' }).then((r) => { if (alive) setSkEnabled(r.ok === true) }).catch(() => { /* 网络错误保守显示 */ })
-        return () => { alive = false }
-      }, [])
+      /* 启用状态由分区顶层 hook 统一探测注入（useSessionKitEnabled，见上）；
+         未启用 = 标题切「知识库体检」、记忆段隐藏、记忆库检测请求完全不发。 */
+      const skEnabled = useSessionKitEnabled()
       const run = async () => {
         setBusy(true); setErr(''); setReport(null)
         try {
@@ -579,7 +587,10 @@ window.__ModuleLoader__.load({
         h('label', { style: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 } },
           h('input', { type: 'checkbox', checked: value?.enabled === true, onChange: (e) => setValue((old) => ({ ...old, enabled: e.target.checked })) }),
           t('promptEnabled')),
+        /* 「知识条目」工具（knowledge_search）由本插件自身注册（lib/tools.js），不依赖 session-kit——
+           因此不随 skEnabled 隐藏，只在字段下留一行说明，纠正「它属于记忆侧」的直觉误解。 */
         field('searchDescription', t('promptSearch'), 4),
+        h('div', { style: styles.note }, t('promptSearchNote')),
         field('archivesDescription', t('promptArchives'), 4),
         field('customText', t('promptCustom'), 5),
         h('div', null, h('button', { onClick: () => void save(), disabled: busy || value === null, style: styles.btn }, t('promptSave'))),
