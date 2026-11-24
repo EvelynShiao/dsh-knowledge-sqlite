@@ -368,13 +368,15 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState('')
       const [repairNote, setRepairNote] = useState('')
-      /* session-kit 启用探测（2026-11-23 用户要求：插件未启用就不显示记忆库体检段）。
-         禁用插件的路由被宿主网关统一拒 401（本插件同款行为）；404/200/网络错 → 保守视为启用。
+      /* session-kit 启用探测（2026-11-23 用户要求：插件未启用就不显示记忆库体检段、不发相关检测）。
+         判据 = r.ok（HTTP 2xx）：实测关闭后路由回 404/空响应体（不是 401），只认 401 会误判。
          探测借道 memoryHealthPath（GET 一次轻体检，只看状态码，结果不用于渲染）。 */
       const [skEnabled, setSkEnabled] = useState(true)
       useEffect(() => {
         let alive = true
-        fetch(memoryHealthPath, { method: 'GET' }).then((r) => { if (alive) setSkEnabled(r.status !== 401) }).catch(() => { /* 网络错误保守显示 */ })
+        /* 启用判据 = HTTP 2xx（r.ok）。实测：关闭 session-kit 后其路由返回 404/空响应体，
+           只认 401 会误判为仍启用（2026-11-23 实测复现）。 */
+        fetch(memoryHealthPath, { method: 'GET' }).then((r) => { if (alive) setSkEnabled(r.ok === true) }).catch(() => { /* 网络错误保守显示 */ })
         return () => { alive = false }
       }, [])
       const run = async () => {
@@ -383,12 +385,19 @@ window.__ModuleLoader__.load({
           /* session-kit 未启用（skEnabled=false）时不发记忆体检请求——A 段隐藏后 mem 数据无人消费，
              发过去只会吃到 401 还浪费一次调用。mem=null + memErr=null 即可。 */
           const [memRes, kbRes] = await Promise.all([
-            skEnabled ? fetch(memoryHealthPath).then((r) => r.json()) : Promise.resolve(null),
+            /* 空响应/404 防御：禁用插件的路由回 404 空 body，直接 r.json() 会抛
+               「Unexpected end of JSON input」——先判 ok 再解析，失败落 {ok:false} 让 A 段显示错误行而不是炸整卡。 */
+            skEnabled
+              ? fetch(memoryHealthPath).then(async (r) => {
+                  if (r.ok !== true) return { ok: false, status: r.status }
+                  return r.json().catch(() => ({ ok: false, status: r.status }))
+                }).catch(() => ({ ok: false }))
+              : Promise.resolve(null),
             fetchJson('/health')
           ])
           setReport({
             mem: memRes?.ok === true ? memRes.value : null,
-            memErr: memRes?.ok === true ? null : String(memRes?.error ?? `HTTP ${memRes?.status ?? '?'}`),
+            memErr: memRes?.ok === true ? null : String(memRes?.error ?? (memRes?.status !== undefined ? `HTTP ${memRes.status}` : '请求失败')),
             kb: kbRes?.ok === true ? kbRes.value : null,
             kbErr: kbRes?.ok === true ? null : String(kbRes?.error ?? `HTTP ${kbRes?.status ?? '?'}`)
           })
