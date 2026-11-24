@@ -28,7 +28,8 @@ window.__ModuleLoader__.load({
     const exports = module.exports
     const React = require('react')
     const { createElement: h, useState, useEffect, useCallback } = React
-    const inject = ['slots', 'locale']
+    const { ChainEditor, useModelDirectory, ensureCss } = require('dsh-knowledge-sqlite/chain-editor.js')
+    const inject = ['slots', 'locale', 'modelDirectories', 'agents']
 
     const NS = 'knowledge-sqlite:client'
 
@@ -101,6 +102,20 @@ window.__ModuleLoader__.load({
       healthSkOff: 'session-kit 插件未启用——记忆库体检段已隐藏，相关检测请求也不再发送（启用后刷新本页恢复）。',
       modelTitle: '模型设置',
       modelDesc: '知识库检索（knowledge_search）查库前会先调一次小模型，把查询改写成几个同义问法以提升召回（L1 查询扩展）；失败会自动降级纯词法检索，不影响结果可用性。向量嵌入模型不可换（与索引口径绑定）。',
+      modelChainHint: '按顺序逐项尝试：某项失败（配额、超时等）自动换下一项，全部失败＝降级纯词法检索；空链条＝使用当前会话模型。',
+      chainFollowSession: '跟随会话使用模型',
+      chainAdd: '添加固定渠道',
+      chainReasoning: '思考度',
+      chainProviderDefault: '跟随提供商默认',
+      chainSession: '跟随会话',
+      chainFixed: '固定模型',
+      chainModel: 'Model',
+      chainMoveUp: '上移',
+      chainMoveDown: '下移',
+      chainDelete: '删除',
+      chainModelsLoading: '模型目录加载中…',
+      chainNoModels: '目录不可用，可手输 provider/model',
+      chainSearchModels: '搜索模型',
       modelFollowLabel: '跟随当前会话模型',
       modelFollowDesc: '开：扩展请求走当前会话正在用的模型（会话走免费车道则扩展同样免费）。关：用下方专用模型。',
       modelProviderLabel: 'Provider',
@@ -192,6 +207,20 @@ window.__ModuleLoader__.load({
       healthSkOff: 'The dsh-session-kit plugin is disabled — the memory checkup section is hidden and its requests are no longer sent (enable it and refresh to restore).',
       modelTitle: 'Model settings',
       modelDesc: 'Before querying the store, knowledge_search calls a small model once to rewrite the query into paraphrases for better recall (L1 query expansion); on failure it silently falls back to lexical-only search — results stay usable. The embedding model is not switchable (tied to the index).',
+      modelChainHint: 'Tried in order: on failure (quota, timeout, ...) the next item is tried; if all fail it degrades to lexical search. An empty chain = use the current session model.',
+      chainFollowSession: 'Follow the session model',
+      chainAdd: 'Add fixed lane',
+      chainReasoning: 'Reasoning',
+      chainProviderDefault: 'Provider default',
+      chainSession: 'Follow session',
+      chainFixed: 'Fixed model',
+      chainModel: 'Model',
+      chainMoveUp: 'Move up',
+      chainMoveDown: 'Move down',
+      chainDelete: 'Delete',
+      chainModelsLoading: 'Loading model directory…',
+      chainNoModels: 'Directory unavailable; you can type provider/model manually',
+      chainSearchModels: 'Search models',
       modelFollowLabel: 'Follow the current session model',
       modelFollowDesc: 'On: expansion requests use the model the current session is using (a free-lane session keeps expansion free). Off: use the dedicated model below.',
       modelProviderLabel: 'Provider',
@@ -496,27 +525,28 @@ window.__ModuleLoader__.load({
         sections)
     }
 
-    /* 模型设置卡（2026-11-23）：知识库检索（L1 查询扩展）用哪个模型。
-       真源 = cordis.patch.yml knowledge-sqlite 条目的 queryExpansion 块。
-       「跟随当前会话模型」= 清空 provider/model（expand.js 走②级会话→③全局默认兜底）；
-       固定模型 = 配齐 provider+model（expand.js 走①级专用路由）。
-       保存后服务端就地热更运行中的 expander 并清扩展缓存，免重启即刻生效。 */
+    /* 链条编辑器需要的宿主上下文：从 apply 注入的 ctx 读取（modelDirectories/agents）。
+       apply 里通过 ModelContextProvider 包一层。 */
+    const ModelContext = React.createContext(null)
+    function useModelContext() { return React.useContext(ModelContext) }
+
+    /* 模型设置卡（2026-11-24 仿记忆蒸馏）：知识库检索（L1 查询扩展）模型链条。
+       链条按顺序逐项尝试：每项 = 跟随会话使用模型 / 固定模型（provider 分组下拉，可指定思考度）。
+       真源 = cordis.patch.yml knowledge-sqlite 条目的 queryExpansion.chain（/api/knowledge-sqlite/model-config 读写）。
+       保存后就地热更运行中的 expander 并清扩展缓存，免重启即刻生效。 */
     function ModelCard() {
-      const [cfg, setCfg] = useState(null)
-      const [follow, setFollow] = useState(true)
-      const [provider, setProvider] = useState('')
-      const [model, setModel] = useState('')
+      const [chain, setChain] = useState(null)
       const [timeoutSec, setTimeoutSec] = useState(3)
       const [busy, setBusy] = useState(false)
       const [note, setNote] = useState('')
       const [err, setErr] = useState('')
+      const ctx = useModelContext()
+      const directory = useModelDirectory(ctx)
+      useEffect(() => { ensureCss() }, [])
       const load = useCallback(async () => {
         try {
           const data = await fetchJson('/model-config')
-          setCfg(data)
-          setFollow(data.mode !== 'fixed')
-          setProvider(data.provider ?? '')
-          setModel(data.model ?? '')
+          setChain(Array.isArray(data.chain) ? data.chain : [])
           setTimeoutSec(Math.max(1, Math.min(60, Math.round((Number(data.timeoutMs) || 3000) / 1000))))
           setErr('')
         } catch (e) { setErr(String(e?.message ?? e)) }
@@ -525,39 +555,36 @@ window.__ModuleLoader__.load({
       const save = async () => {
         setBusy(true); setNote(''); setErr('')
         try {
-          const body = follow ? { mode: 'session' } : { mode: 'fixed', provider: provider.trim(), model: model.trim() }
-          body.timeoutSeconds = Math.max(1, Math.min(60, Math.trunc(Number(timeoutSec) || 3)))
-          const result = await fetchJson('/model-config', { method: 'POST', body: JSON.stringify(body) })
+          const result = await fetchJson('/model-config', {
+            method: 'POST',
+            body: JSON.stringify({
+              chain: chain ?? [],
+              timeoutSeconds: Math.max(1, Math.min(60, Math.trunc(Number(timeoutSec) || 3))),
+            }),
+          })
           setNote(result?.note ?? t('modelSaved'))
           await load()
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
-      const fixedReady = follow === false && provider.trim() !== '' && model.trim() !== ''
-      const current = cfg === null ? t('loading')
-        : cfg.mode === 'fixed' && cfg.provider && cfg.model
-        ? `${cfg.provider} / ${cfg.model}`
-        : t('modelCurrentSession')
       return h('div', { style: { display: 'grid', gap: 8 } },
         h('strong', { style: { fontSize: 13 } }, t('modelTitle')),
         h('p', { style: styles.note }, t('modelDesc')),
-        h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } },
-          h('span', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-            h('input', { type: 'checkbox', checked: follow, onChange: (e) => setFollow(e.target.checked) }),
-            h('strong', null, t('modelFollowLabel'))),
-          h('span', { style: styles.note }, t('modelFollowDesc'))),
-        follow ? null : h('div', { style: { display: 'grid', gap: 6 } },
-          h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } }, t('modelProviderLabel'),
-            h('input', { value: provider, onChange: (e) => setProvider(e.target.value), placeholder: 'inai-free', style: styles.input })),
-          h('label', { style: { display: 'grid', gap: 2, fontSize: 12 } }, t('modelModelLabel'),
-            h('input', { value: model, onChange: (e) => setModel(e.target.value), placeholder: 'z-ai/glm-5.3-flash', style: styles.input }))),
+        h('p', { style: styles.note }, t('modelChainHint')),
+        chain === null
+          ? h('div', { style: styles.note }, t('loading'))
+          : h(ChainEditor, {
+              chain, onChange: setChain, directory, t, busy,
+              followLabel: t('chainFollowSession'),
+              addLabel: t('chainAdd'),
+              reasoningLabel: t('chainReasoning'),
+              providerDefaultLabel: t('chainProviderDefault'),
+            }),
         h('label', { style: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, flexWrap: 'wrap' } },
           h('span', null, t('modelTimeoutLabel')),
           h('input', { type: 'number', min: 1, max: 60, step: 1, value: timeoutSec, onChange: (e) => setTimeoutSec(Math.max(1, Math.min(60, Math.trunc(Number(e.target.value) || 3)))), style: { ...styles.input, width: 70 } }),
           h('span', { style: styles.note }, t('modelTimeoutDesc'))),
-        h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 } },
-          h('span', { style: styles.note }, `${t('modelCurrent')}${current}`),
-          h('button', { onClick: () => void save(), disabled: busy || (follow === false && !fixedReady), style: styles.btn },
-            busy ? t('modelSaving') : t('modelSave'))),
+        h('div', null,
+          h('button', { onClick: () => void save(), disabled: busy || chain === null, style: styles.btn }, busy ? t('modelSaving') : t('modelSave'))),
         note !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, note) : null,
         err !== '' ? h('div', { style: styles.err }, `${t('modelSaveFailed')}: ${err}`) : null)
     }
@@ -599,6 +626,7 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      const applyCtx = ctx
       if (!ctx.slots) {
         // 防御：inject 声明链断裂时绝不炸 shell——丢一张卡片远好于崩整页。
         console.warn('[dsh-knowledge-sqlite] ctx.slots unavailable; settings card skipped')
@@ -621,7 +649,7 @@ window.__ModuleLoader__.load({
         order: 36,
         locale: NS,
         label: () => t('label'),
-      }, () => h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(ModelCard), h(PromptCard), h(HealthCard))))
+      }, () => h(ModelContext.Provider, { value: applyCtx }, h('div', { style: { display: 'grid', gap: 28 } }, h(VecCard), h(ModelCard), h(PromptCard), h(HealthCard)))))
     }
     exports.apply = apply
     // shell 的 ModuleLoader 按本 bundle 导出的 inject 给 apply 的 ctx 挂服务（OFM/webin 同款）；
