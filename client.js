@@ -70,6 +70,7 @@ window.__ModuleLoader__.load({
       selftestBtn: '跑自检（512 维 / L2≈1.0）',
       waitingLog: '（等待输出…）',
       healthTitle: '记忆与知识库体检',
+      healthTitleNoMem: '知识库体检',
       healthDesc: '一次体检三处：session-kit 记忆库（memory.sqlite：表行数/FTS 一致性/孤儿引用）、知识库条目层（items+向量缺口）、对话档案层（arch_*，同库不同表）。全程只读，不修任何数据。',
       healthDescNoMem: '一次体检两处：知识库条目层（items+向量缺口）、对话档案层（arch_*，同库不同表）。全程只读，不修任何数据。',
       healthRun: '开始体检',
@@ -97,6 +98,7 @@ window.__ModuleLoader__.load({
       healthExpansionCache: '查询扩展缓存',
       healthArchEmpty: '档案层为空或未建（archives_search 首次使用后才有数据）',
       healthUnavailable: '服务未加载（插件改动需重启 DSH 生效）',
+      healthSkOff: 'session-kit 插件未启用——记忆库体检段已隐藏，相关检测请求也不再发送（启用后刷新本页恢复）。',
       modelTitle: '模型设置',
       modelDesc: '知识库检索（knowledge_search）查库前会先调一次小模型，把查询改写成几个同义问法以提升召回（L1 查询扩展）；失败会自动降级纯词法检索，不影响结果可用性。向量嵌入模型不可换（与索引口径绑定）。',
       modelFollowLabel: '跟随当前会话模型',
@@ -158,6 +160,7 @@ window.__ModuleLoader__.load({
       selftestBtn: 'Run self-test (512 dims / L2≈1.0)',
       waitingLog: '(waiting for output…)',
       healthTitle: 'Memory & knowledge checkup',
+      healthTitleNoMem: 'Knowledge base checkup',
       healthDesc: 'One checkup, three stores: session-kit memory database (memory.sqlite: table rows / FTS consistency / orphan refs), knowledge entry layer (items + vector gaps), and the conversation archive layer (arch_*, same database, separate tables). Read-only — never modifies data.',
       healthDescNoMem: 'One checkup, two stores: knowledge entry layer (items + vector gaps) and the conversation archive layer (arch_*, same database, separate tables). Read-only — never modifies data.',
       healthRun: 'Run checkup',
@@ -185,6 +188,7 @@ window.__ModuleLoader__.load({
       healthExpansionCache: 'Query expansion cache',
       healthArchEmpty: 'Archive layer is empty or not created (data appears after first archives_search use)',
       healthUnavailable: 'Service not loaded (plugin changes need a DSH restart)',
+      healthSkOff: 'The dsh-session-kit plugin is disabled — the memory checkup section is hidden and its requests are no longer sent (enable it and refresh to restore).',
       modelTitle: 'Model settings',
       modelDesc: 'Before querying the store, knowledge_search calls a small model once to rewrite the query into paraphrases for better recall (L1 query expansion); on failure it silently falls back to lexical-only search — results stay usable. The embedding model is not switchable (tied to the index).',
       modelFollowLabel: 'Follow the current session model',
@@ -463,7 +467,7 @@ window.__ModuleLoader__.load({
           section('arch', tag() + t('healthArchSection'), archRows))
       }
       return h('div', { style: { display: 'grid', gap: 8 } },
-        h('strong', { style: { fontSize: 13 } }, t('healthTitle')),
+        h('strong', { style: { fontSize: 13 } }, skEnabled ? t('healthTitle') : t('healthTitleNoMem')),
         h('p', { style: styles.note }, skEnabled ? t('healthDesc') : t('healthDescNoMem')),
         h('div', { style: { display: 'flex', gap: 8 } },
           h('button', { onClick: () => void run(), disabled: busy, style: styles.btn }, busy ? t('healthRunning') : t('healthRun')),
@@ -471,6 +475,7 @@ window.__ModuleLoader__.load({
             ? h('button', { onClick: () => void rebuildFts(), disabled: busy, style: styles.btn }, t('healthRebuildFts')) : null),
         repairNote !== '' ? h('div', { style: { color: 'var(--dsw-alias-state-success-primary, #12a150)', fontSize: 12 } }, repairNote) : null,
         err !== '' ? h('div', { style: styles.err }, `${t('healthFailed')}: ${err}`) : null,
+        skEnabled ? null : h('div', { style: styles.note }, t('healthSkOff')),
         sections)
     }
 
