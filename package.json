@@ -52,7 +52,7 @@
     "test": "vitest run",
     "check:deploy": "node scripts/check-deploy.mjs"
   },
-  "license": "MIT",
+  "license": "MPL-2.0",
   "author": {
     "name": "ninjasln",
     "url": "https://github.com/NinjaSln-labs"
